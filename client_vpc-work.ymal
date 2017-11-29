@@ -1,0 +1,984 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'VPC: Public and Private subnets in three availability zones'
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+    - Label:
+        default: 'VPC Parameters'
+      Parameters:
+      - Region
+      - Clientid
+      - ClientName
+      - Zoneone
+      - BastionVPCStack
+      - AdminVPCStack
+      - Label:
+          default: Security Configuration
+        Parameters:
+          - KeyPairName
+    - Label:
+        default: MongoDB Database Configuration
+      Parameters:
+      - ClusterReplicaSetCount
+      - Iops
+      - MongoDBVersion
+      - MongoDBAdminUsername
+      - MongoDBAdminPassword
+      - NodeInstanceType
+      - ReplicaShardIndex
+      - VolumeSize
+      - VolumeType
+    ParameterLabels:
+      ClusterReplicaSetCount:
+        default: Cluster Replica Set Count
+      Iops:
+        default: Iops
+      KeyPairName:
+        default: Key Pair Name
+      MongoDBAdminPassword:
+        default: MongoDB Admin Password
+      MongoDBAdminUsername:
+        default: MongoDB Admin Username
+      MongoDBVersion:
+        default: MongoDB Version
+      NodeInstanceType:
+        default: Node Instance Type
+      QSS3BucketName:
+        default: Quick Start S3 Bucket Name
+      QSS3KeyPrefix:
+        default: Quick Start S3 Key Prefix
+      ReplicaShardIndex:
+        default: Replica Shard Index
+      VolumeSize:
+        default: Volume Size
+      VolumeType:
+        default: Volume Type
+Parameters:
+  Region:
+    Description: 'Region ID Default should be 0 for us-east01  (10.XXX.0.0/24)'
+    Type: Number
+    Default: 0
+    ConstraintDescription: 'Must be in the range [0-255]'
+    MinValue: 0
+    MaxValue: 255
+  Clientid:
+    Description: 'Client ID Default should be 16 for the first client Stack  (10.0.XXX.0/24)'
+    Type: Number
+    Default: 16
+    ConstraintDescription: 'Must be in the range [16-255]'
+    MinValue: 16
+    MaxValue: 255
+  BastionVPCStack:
+    Description: 'Stack name of Bastion VPC stack .'
+    Type: String
+  AdminVPCStack:
+    Description: 'Stack name of Admin VPC stack .'
+    Type: String
+  ClientName:
+    Description: 'Clients Name -- name cannot contain characters that are not letters, or digits or the dash --'
+    Type: String
+    Default: ''
+  ClusterReplicaSetCount:
+    Description: Number of Replica Set Members. Choose 1 or 3
+    Type: String
+    Default: '1'
+    AllowedValues:
+      - '1'
+      - '3'
+  MongoDBVersion:
+    Description: MongoDB version
+    Type: String
+    Default: '3.4'
+    AllowedValues:
+      - '3.4'
+      - '3.2'
+  MongoDBAdminUsername:
+    Default: admin
+    NoEcho: 'true'
+    Description: MongoDB admin account username
+    Type: String
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
+  MongoDBAdminPassword:
+    AllowedPattern: '([A-Za-z0-9_@-]{8,32})'
+    ConstraintDescription: >-
+      Input your MongoDB database password, Min 8, Maximum of 32 characters. .
+      Allowed characters are: [A-Za-z0-9_@-]
+    Description: 'Enter your MongoDB Database Password, Min 8, maximum of 32 characters.'
+    NoEcho: 'true'
+    Type: String
+  ReplicaShardIndex:
+    Description: Shard Index of this replica set
+    Type: String
+    Default: '0'
+  QSS3BucketName:
+    AllowedPattern: '^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$'
+    Default: quickstart-reference
+    Type: String
+    ConstraintDescription: >-
+      Quick Start bucket name can include numbers, lowercase letters, uppercase
+      letters, and hyphens (-). It cannot start or end with a hyphen (-).
+    Description: >-
+      S3 bucket name for the Quick Start assets. Quick Start bucket name can
+      include numbers, lowercase letters, uppercase letters, and hyphens (-). It
+      cannot start or end with a hyphen (-).
+  QSS3KeyPrefix:
+    AllowedPattern: '^[0-9a-zA-Z-/]*$'
+    Default: mongodb/latest/
+    Type: String
+    ConstraintDescription: >-
+      Quick Start key prefix can include numbers, lowercase letters, uppercase
+      letters, hyphens (-), and forward slash (/).
+    Description: >-
+      S3 key prefix for the Quick Start assets. Quick Start key prefix can
+      include numbers, lowercase letters, uppercase letters, hyphens (-), and
+      forward slash (/). It cannot start or end with a hyphen (-).
+  KeyPairName:
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    Default: home
+    Description: >-
+      Name of an existing EC2 KeyPair. MongoDB instances will launch with this
+      KeyPair.
+  VolumeSize:
+    Type: String
+    Description: EBS Volume Size (data) to be attached to node in GBs
+    Default: '400'
+  VolumeType:
+    Type: String
+    Description: 'EBS Volume Type (data) to be attached to node in GBs [io1,gp2]'
+    Default: gp2
+    AllowedValues:
+      - gp2
+      - io1
+  Iops:
+    Type: String
+    Description: Iops of EBS volume when io1 type is chosen. Otherwise ignored
+    Default: '100'
+  NodeInstanceType:
+    Description: Amazon EC2 instance type for the MongoDB nodes.
+    Type: String
+    Default: m4.large
+    AllowedValues:
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - c3.large
+      - c3.xlarge
+      - c3.2xlarge
+      - c3.4xlarge
+      - c3.8xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - i2.xlarge
+      - i2.2xlarge
+      - i2.4xlarge
+      - i2.8xlarge
+
+
+# Resources Start
+Resources:
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Sub '10.${Region}.${Clientid}.0/24'
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+      - Key: Name
+        Value: !Sub '${ClientName} VPC'
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub '${ClientName} VPC'
+  VPCGatewayAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  SubnetAPublic:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Sub '10.${Region}.${Clientid}.0/26'
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub '${ClientName} A Public'
+      - Key: Reach
+        Value: Public
+  SubnetAPrivate:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Sub '10.${Region}.${Clientid}.64/26'
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub '${ClientName} A Private'
+      - Key: Reach
+        Value: Private
+  SubnetBPublic:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Sub '10.${Region}.${Clientid}.128/26'
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub '${ClientName} B Public'
+      - Key: Reach
+        Value: Public
+  SubnetBPrivate:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Sub '10.${Region}.${Clientid}.192/26'
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub '${ClientName} B Private'
+      - Key: Reach
+        Value: Private
+  RouteTablePublic: # should be RouteTableAPublic, but logical id was not changed for backward compatibility
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub '${ClientName} A Public'
+  RouteTablePrivate: # should be RouteTableAPrivate, but logical id was not changed for backward compatibility
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub '${ClientName} A Private'
+  RouteTableBPublic:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub '${ClientName} B Public'
+  RouteTableBPrivate:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub '${ClientName} B Private'
+  RouteTableAssociationAPublic:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref SubnetAPublic
+      RouteTableId: !Ref RouteTablePublic
+  RouteTableAssociationAPrivate:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref SubnetAPrivate
+      RouteTableId: !Ref RouteTablePrivate
+  RouteTableAssociationBPublic:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref SubnetBPublic
+      RouteTableId: !Ref RouteTableBPublic
+  RouteTableAssociationBPrivate:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref SubnetBPrivate
+      RouteTableId: !Ref RouteTableBPrivate
+  RouteTablePublicInternetRoute: # should be RouteTablePublicAInternetRoute, but logical id was not changed for backward compatibility
+    Type: 'AWS::EC2::Route'
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTablePublic
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+  RouteTablePublicBInternetRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTableBPublic
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+  NetworkAclPublic:
+    Type: 'AWS::EC2::NetworkAcl'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Public
+  NetworkAclPrivate:
+    Type: 'AWS::EC2::NetworkAcl'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: Private
+  SubnetNetworkAclAssociationAPublic:
+    Type: 'AWS::EC2::SubnetNetworkAclAssociation'
+    Properties:
+      SubnetId: !Ref SubnetAPublic
+      NetworkAclId: !Ref NetworkAclPublic
+  SubnetNetworkAclAssociationAPrivate:
+    Type: 'AWS::EC2::SubnetNetworkAclAssociation'
+    Properties:
+      SubnetId: !Ref SubnetAPrivate
+      NetworkAclId: !Ref NetworkAclPrivate
+  SubnetNetworkAclAssociationBPublic:
+    Type: 'AWS::EC2::SubnetNetworkAclAssociation'
+    Properties:
+      SubnetId: !Ref SubnetBPublic
+      NetworkAclId: !Ref NetworkAclPublic
+  SubnetNetworkAclAssociationBPrivate:
+    Type: 'AWS::EC2::SubnetNetworkAclAssociation'
+    Properties:
+      SubnetId: !Ref SubnetBPrivate
+      NetworkAclId: !Ref NetworkAclPrivate
+  NetworkAclEntryInPublicAllowAll:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref NetworkAclPublic
+      RuleNumber: 99
+      Protocol: -1
+      RuleAction: allow
+      Egress: false
+      CidrBlock: '0.0.0.0/0'
+  NetworkAclEntryOutPublicAllowAll:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref NetworkAclPublic
+      RuleNumber: 99
+      Protocol: -1
+      RuleAction: allow
+      Egress: true
+      CidrBlock: '0.0.0.0/0'
+  NetworkAclEntryInPrivateAllowVPC:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref NetworkAclPrivate
+      RuleNumber: 99
+      Protocol: -1
+      RuleAction: allow
+      Egress: false
+      CidrBlock: '0.0.0.0/0'
+  NetworkAclEntryOutPrivateAllowVPC:
+    Type: 'AWS::EC2::NetworkAclEntry'
+    Properties:
+      NetworkAclId: !Ref NetworkAclPrivate
+      RuleNumber: 99
+      Protocol: -1
+      RuleAction: allow
+      Egress: true
+      CidrBlock: '0.0.0.0/0'
+#NatGateway
+  EIPA:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: vpc
+  EIPB:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: vpc
+  NatGatewayA:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+        - EIPA
+        - AllocationId
+      SubnetId: !Ref SubnetAPublic
+  NatGatewayB:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+        - EIPB
+        - AllocationId
+      SubnetId: !Ref SubnetBPublic
+  RouteNATa:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTablePrivate
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref NatGatewayA
+  RouteNATb:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTableBPrivate
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref NatGatewayB
+# S3 end Endpoint
+  EndpointS3:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      RouteTableIds:
+      - !Ref RouteTablePrivate
+      - !Ref RouteTableBPrivate
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcId: !Ref VPC
+
+# dynamodb end Endpoint
+  Endpointddb:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      RouteTableIds:
+      - !Ref RouteTablePrivate
+      - !Ref RouteTableBPrivate
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
+      VpcId: !Ref VPC
+
+# ELB's
+  ElasticLoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      Listeners:
+      - LoadBalancerPort: '80'
+        InstancePort: '80'
+        Protocol: HTTP
+      Subnets:
+        - !Ref SubnetAPublic
+        - !Ref SubnetBPublic
+      HealthCheck:
+        Target:
+          Fn::Join:
+          - ''
+          - - 'HTTP:'
+            - '80'
+            - "/"
+        HealthyThreshold: '3'
+        UnhealthyThreshold: '5'
+        Interval: '30'
+        Timeout: '5'
+
+# peering
+  myVPCPeeringConnection:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties:
+      VpcId: !Ref VPC
+      PeerVpcId:
+          'Fn::ImportValue': !Sub '${AdminVPCStack}-VPC'
+
+  PeeringRouteAPrivate:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock:
+          'Fn::ImportValue': !Sub '${AdminVPCStack}-CidrBlock'
+      RouteTableId:
+        Ref: RouteTablePrivate
+      VpcPeeringConnectionId:
+        Ref: myVPCPeeringConnection
+  PeeringRouteBPrivate:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock:
+          'Fn::ImportValue': !Sub '${AdminVPCStack}-CidrBlock'
+      RouteTableId:
+        Ref: RouteTableBPrivate
+      VpcPeeringConnectionId:
+        Ref: myVPCPeeringConnection
+  PeeringRouteAPublic:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock:
+          'Fn::ImportValue': !Sub '${AdminVPCStack}-CidrBlock'
+      RouteTableId:
+        Ref: RouteTablePublic
+      VpcPeeringConnectionId:
+        Ref: myVPCPeeringConnection
+  PeeringRouteBPublic:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock:
+          'Fn::ImportValue': !Sub '${AdminVPCStack}-CidrBlock'
+      RouteTableId:
+        Ref: RouteTableBPublic
+      VpcPeeringConnectionId:
+        Ref: myVPCPeeringConnection
+
+#SecurityGroup
+  SecurityGroupELB:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: '${ClientName} ELB'
+      GroupDescription: '${ClientName} ELB'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - CidrIp: '0.0.0.0/0'
+        IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+      - CidrIp: '0.0.0.0/0'
+        IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+
+  SecurityGroupAPP:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: '${ClientName} APP'
+      GroupDescription: '${ClientName} Application'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - SourceSecurityGroupId: !Ref SecurityGroupELB
+        IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+      - SourceSecurityGroupId: !Ref SecurityGroupELB
+        IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp:
+          !Join ['', ["Fn::ImportValue" : {"Fn::Sub":'${BastionVPCStack}-IP'}, /32]]
+
+  SecurityGroupCORE:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: '${ClientName} Core'
+      GroupDescription: '${ClientName} Core'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - SourceSecurityGroupId: !Ref SecurityGroupELB
+        IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+      - SourceSecurityGroupId: !Ref SecurityGroupELB
+        IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp:
+          !Join ['', ["Fn::ImportValue" : {"Fn::Sub":'${BastionVPCStack}-IP'}, /32]]
+
+  SecurityGroupDB:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: '${ClientName} DB'
+      GroupDescription: '${ClientName} DataBase'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - SourceSecurityGroupId: !Ref SecurityGroupAPP
+        IpProtocol: tcp
+        FromPort: '27017'
+        ToPort: '27019'
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp:
+          !Join ['', ["Fn::ImportValue" : {"Fn::Sub":'${BastionVPCStack}-IP'}, /32]]
+
+  SecurityGroupREC:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: '${ClientName} Rec'
+      GroupDescription: '${ClientName} Recorder'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp:
+          !Join ['', ["Fn::ImportValue" : {"Fn::Sub":'${BastionVPCStack}-IP'}, /32]]
+
+
+  SecurityGroupEFS:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: '${ClientName} EFS'
+      GroupDescription: '${ClientName} EFS Mount'
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - SourceSecurityGroupId: !Ref SecurityGroupCORE
+        IpProtocol: tcp
+        FromPort: 111
+        ToPort: 111
+      - SourceSecurityGroupId: !Ref SecurityGroupCORE
+        IpProtocol: tcp
+        FromPort: 1039
+        ToPort: 1039
+      - SourceSecurityGroupId: !Ref SecurityGroupCORE
+        IpProtocol: tcp
+        FromPort: 1047
+        ToPort: 1048
+      - SourceSecurityGroupId: !Ref SecurityGroupCORE
+        IpProtocol: tcp
+        FromPort: 2049
+        ToPort: 2049
+      - SourceSecurityGroupId: !Ref SecurityGroupCORE
+        IpProtocol: udp
+        FromPort: 111
+        ToPort: 111
+      - SourceSecurityGroupId: !Ref SecurityGroupCORE
+        IpProtocol: udp
+        FromPort: 1039
+        ToPort: 1039
+      - SourceSecurityGroupId: !Ref SecurityGroupCORE
+        IpProtocol: udp
+        FromPort: 1047
+        ToPort: 1048
+      - SourceSecurityGroupId: !Ref SecurityGroupCORE
+        IpProtocol: udp
+        FromPort: 2049
+        ToPort: 2049
+      - SourceSecurityGroupId: !Ref SecurityGroupAPP
+        IpProtocol: tcp
+        FromPort: 111
+        ToPort: 111
+      - SourceSecurityGroupId: !Ref SecurityGroupAPP
+        IpProtocol: tcp
+        FromPort: 1039
+        ToPort: 1039
+      - SourceSecurityGroupId: !Ref SecurityGroupAPP
+        IpProtocol: tcp
+        FromPort: 1047
+        ToPort: 1048
+      - SourceSecurityGroupId: !Ref SecurityGroupAPP
+        IpProtocol: tcp
+        FromPort: 2049
+        ToPort: 2049
+      - SourceSecurityGroupId: !Ref SecurityGroupAPP
+        IpProtocol: udp
+        FromPort: 111
+        ToPort: 111
+      - SourceSecurityGroupId: !Ref SecurityGroupAPP
+        IpProtocol: udp
+        FromPort: 1039
+        ToPort: 1039
+      - SourceSecurityGroupId: !Ref SecurityGroupAPP
+        IpProtocol: udp
+        FromPort: 1047
+        ToPort: 1048
+      - SourceSecurityGroupId: !Ref SecurityGroupAPP
+        IpProtocol: udp
+        FromPort: 2049
+        ToPort: 2049
+      - SourceSecurityGroupId: !Ref SecurityGroupREC
+        IpProtocol: tcp
+        FromPort: 111
+        ToPort: 111
+      - SourceSecurityGroupId: !Ref SecurityGroupREC
+        IpProtocol: tcp
+        FromPort: 1039
+        ToPort: 1039
+      - SourceSecurityGroupId: !Ref SecurityGroupREC
+        IpProtocol: tcp
+        FromPort: 1047
+        ToPort: 1048
+      - SourceSecurityGroupId: !Ref SecurityGroupREC
+        IpProtocol: tcp
+        FromPort: 2049
+        ToPort: 2049
+      - SourceSecurityGroupId: !Ref SecurityGroupREC
+        IpProtocol: udp
+        FromPort: 111
+        ToPort: 111
+      - SourceSecurityGroupId: !Ref SecurityGroupREC
+        IpProtocol: udp
+        FromPort: 1039
+        ToPort: 1039
+      - SourceSecurityGroupId: !Ref SecurityGroupREC
+        IpProtocol: udp
+        FromPort: 1047
+        ToPort: 1048
+      - SourceSecurityGroupId: !Ref SecurityGroupREC
+        IpProtocol: udp
+        FromPort: 2049
+        ToPort: 2049
+#################
+# add sg rules
+  SecurityGroupCOREIngressTCP:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SecurityGroupCORE
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref SecurityGroupCORE
+  SecurityGroupCOREIngressUDP:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SecurityGroupCORE
+      IpProtocol: udp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref SecurityGroupCORE
+
+  SecurityGroupDBIngressTCP:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SecurityGroupDB
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref SecurityGroupDB
+  SecurityGroupDBIngressUDP:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SecurityGroupDB
+      IpProtocol: udp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref SecurityGroupDB
+
+  SecurityGroupRECIngressTCP:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SecurityGroupREC
+      IpProtocol: tcp
+      FromPort: '0'
+      ToPort: '65535'
+      SourceSecurityGroupId: !Ref SecurityGroupREC
+  SecurityGroupRECIngressUDP:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SecurityGroupREC
+      IpProtocol: udp
+      FromPort: '0'
+      ToPort: '65535'
+      SourceSecurityGroupId: !Ref SecurityGroupREC
+
+  SecurityGroupAPPIngressCORE:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SecurityGroupAPP
+      IpProtocol: tcp
+      FromPort: '0'
+      ToPort: '65535'
+      SourceSecurityGroupId: !Ref SecurityGroupCORE
+  SecurityGroupAPPIngressREC:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SecurityGroupAPP
+      IpProtocol: udp
+      FromPort: '0'
+      ToPort: '65535'
+      SourceSecurityGroupId: !Ref SecurityGroupREC
+
+  SecurityGroupCOREIngressAPP:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SecurityGroupCORE
+      IpProtocol: tcp
+      FromPort: '0'
+      ToPort: '65535'
+      SourceSecurityGroupId: !Ref SecurityGroupAPP
+  SecurityGroupCOREIngressREC:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SecurityGroupCORE
+      IpProtocol: udp
+      FromPort: '0'
+      ToPort: '65535'
+      SourceSecurityGroupId: !Ref SecurityGroupREC
+
+  SecurityGroupREcIngressCORE:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SecurityGroupREC
+      IpProtocol: tcp
+      FromPort: '0'
+      ToPort: '65535'
+      SourceSecurityGroupId: !Ref SecurityGroupCORE
+  SecurityGroupRECIngressAPP:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SecurityGroupREC
+      IpProtocol: udp
+      FromPort: '0'
+      ToPort: '65535'
+      SourceSecurityGroupId: !Ref SecurityGroupAPP
+
+  SecurityGroupAPPIngressTCP:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SecurityGroupAPP
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref SecurityGroupAPP
+  SecurityGroupAPPIngressUDP:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !Ref SecurityGroupAPP
+      IpProtocol: udp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref SecurityGroupAPP
+
+
+#################
+#EFS
+  EFSFileSystem:
+    Type: 'AWS::EFS::FileSystem'
+    Properties:
+      FileSystemTags:
+        - Key: Name
+          Value: !Ref 'AWS::StackName'
+  EFSMountTargetA:
+    Type: 'AWS::EFS::MountTarget'
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SubnetId:
+        Ref: SubnetAPrivate
+      SecurityGroups:
+        - !Ref SecurityGroupEFS
+  EFSMountTargetB:
+    Type: 'AWS::EFS::MountTarget'
+    Properties:
+      FileSystemId: !Ref EFSFileSystem
+      SubnetId:
+        Ref: SubnetBPrivate
+      SecurityGroups:
+        - !Ref SecurityGroupEFS
+
+#########################################################################################
+# Outputs Start
+Outputs:
+  TemplateID:
+    Description: 'template id'
+    Value: !Sub '${ClientName} VPC'
+  StackName:
+    Description: 'Stack name'
+    Value: !Sub '${AWS::StackName}'
+  AZs:
+    Description: 'AZs'
+    Value: 4
+    Export:
+      Name: !Sub '${AWS::StackName}-AZs'
+  AZA:
+    Description: 'AZ of A'
+    Value: !Select [0, !GetAZs '']
+    Export:
+      Name: !Sub '${AWS::StackName}-AZA'
+  AZB:
+    Description: 'AZ of B'
+    Value: !Select [1, !GetAZs '']
+    Export:
+      Name: !Sub '${AWS::StackName}-AZB'
+  Region:
+    Description: 'Region.'
+    Value: !Ref Region
+    Export:
+      Name: !Sub '${AWS::StackName}-Region'
+  VPC:
+    Description: 'VPC.'
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${AWS::StackName}-VPC'
+  SubnetsPublic:
+    Description: 'Subnets Public.'
+    Value: !Join [',', [!Ref SubnetAPublic, !Ref SubnetBPublic]]
+    Export:
+      Name: !Sub '${AWS::StackName}-SubnetsPublic'
+  SubnetsPrivate:
+    Description: 'Subnets Private.'
+    Value: !Join [',', [!Ref SubnetAPrivate, !Ref SubnetBPrivate]]
+    Export:
+      Name: !Sub '${AWS::StackName}-SubnetsPrivate'
+  RouteTablePrivate: # deprecated in v4, will be removed in v5
+    Description: 'Route table Private (deprecated in v4, will be removed in v5).'
+    Value: !Ref RouteTablePrivate
+    Export:
+      Name: !Sub '${AWS::StackName}-RouteTablePrivate'
+  RouteTablePublic: # deprecated in v4, will be removed in v5
+    Description: 'Route table Public (deprecated in v4, will be removed in v5).'
+    Value: !Ref RouteTablePublic
+    Export:
+      Name: !Sub '${AWS::StackName}-RouteTablePublic'
+  RouteTablesPrivate:
+    Description: 'Route tables Private.'
+    Value: !Join [',', [!Ref RouteTablePrivate, !Ref RouteTableBPrivate]]
+    Export:
+      Name: !Sub '${AWS::StackName}-RouteTablesPrivate'
+  RouteTablesPublic:
+    Description: 'Route tables Public.'
+    Value: !Join [',', [!Ref RouteTablePublic, !Ref RouteTableBPublic]]
+    Export:
+      Name: !Sub '${AWS::StackName}-RouteTablesPublic'
+  SubnetAPublic:
+    Description: 'Subnet A Public.'
+    Value: !Ref SubnetAPublic
+    Export:
+      Name: !Sub '${AWS::StackName}-SubnetAPublic'
+  RouteTableAPublic:
+    Description: 'Route table A Public.'
+    Value: !Ref RouteTablePublic
+    Export:
+      Name: !Sub '${AWS::StackName}-RouteTableAPublic'
+  SubnetAPrivate:
+    Description: 'Subnet A Private.'
+    Value: !Ref SubnetAPrivate
+    Export:
+      Name: !Sub '${AWS::StackName}-SubnetAPrivate'
+  RouteTableAPrivate:
+    Description: 'Route table A Private.'
+    Value: !Ref RouteTablePrivate
+    Export:
+      Name: !Sub '${AWS::StackName}-RouteTableAPrivate'
+  SubnetBPublic:
+    Description: 'Subnet B Public.'
+    Value: !Ref SubnetBPublic
+    Export:
+      Name: !Sub '${AWS::StackName}-SubnetBPublic'
+  RouteTableBPublic:
+    Description: 'Route table B Public.'
+    Value: !Ref RouteTableBPublic
+    Export:
+      Name: !Sub '${AWS::StackName}-RouteTableBPublic'
+  SubnetBPrivate:
+    Description: 'Subnet B Private.'
+    Value: !Ref SubnetBPrivate
+    Export:
+      Name: !Sub '${AWS::StackName}-SubnetBPrivate'
+  RouteTableBPrivate:
+    Description: 'Route table B Private.'
+    Value: !Ref RouteTableBPrivate
+    Export:
+      Name: !Sub '${AWS::StackName}-RouteTableBPrivate'
+  IPAddressNATA:
+    Description: 'The public IP address of the NAT gateway.'
+    Value: !Ref EIPA
+    Export:
+      Name: !Sub '${AWS::StackName}-IPAddressNATA'
+  IPAddressNATB:
+    Description: 'The public IP address of the NAT gateway.'
+    Value: !Ref EIPB
+    Export:
+      Name: !Sub '${AWS::StackName}-IPAddressNATB'
+  EndpointS3:
+    Description: 'The VPC endpoint to S3.'
+    Value: !Ref EndpointS3
+    Export:
+      Name: !Sub '${AWS::StackName}-EndpointS3'
+  EndpointDDB:
+    Description: 'The VPC endpoint to DynamoDB.'
+    Value: !Ref Endpointddb
+    Export:
+      Name: !Sub '${AWS::StackName}-Endpointddb'
+  ElasticLoadBalancer:
+    Description: 'Clients ELB.'
+    Value: !Ref ElasticLoadBalancer
+    Export:
+      Name: !Sub '${AWS::StackName}-ElasticLoadBalancer'
